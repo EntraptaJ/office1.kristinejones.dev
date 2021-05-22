@@ -1,0 +1,4 @@
+files:
+  - description: 'rt2-dns1 Config'
+    path: /home/vyos/containers/Configs/CoreDNS/Corefile
+    file: ./Corefile

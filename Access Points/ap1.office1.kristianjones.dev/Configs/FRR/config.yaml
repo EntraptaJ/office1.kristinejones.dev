@@ -1,0 +1,4 @@
+files:
+  - description: 'ap1.office1.kristianjones.dev frr config'
+    path: /etc/frr/frr.conf
+    file: ./frr.conf
