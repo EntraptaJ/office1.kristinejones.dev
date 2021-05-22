@@ -1,0 +1,420 @@
+  container {
+     name DNS {
+         description rt2-dns1.office1.kristianjones.dev
+         image coredns/coredns
+         network Services {
+             address 172.16.21.41
+         }
+         volume Corefile {
+             destination /Corefile
+             source /home/vyos/containers/configs/CoreDNS/Corefile
+         }
+     }
+     name ONOS1 {
+         image onosproject/onos
+         network Services {
+             address 172.16.21.21
+         }
+     }
+     name SpeedTest1 {
+         image adolfintel/speedtest
+         network Services {
+             address 172.16.21.31
+         }
+     }
+     name Unifi {
+         description unifi.office1.kristianjones.dev
+         environment UNIFI_STDOUT {
+             value TRUE
+         }
+         image jacobalberty/unifi:stable
+         network Services {
+             address 172.16.21.51
+         }
+         volume Data {
+             destination /unifi
+             source /home/vyos/containers/data/Unifi
+         }
+     }
+     network Services {
+         prefix 172.16.21.0/24
+     }
+ }
+ high-availability {
+     vrrp {
+         group 9FirstAve-Services {
+             description rt.services.office1.kristianjoens.dev
+             hello-source-address 172.16.101.12
+             interface eth0.101
+             peer-address 172.16.101.11
+             virtual-address 172.16.101.1/24
+             vrid 101
+         }
+         group 9FirstAve-Spine {
+             description rt.spine1.office1.kristianojones.dev
+             hello-source-address 172.16.100.12
+             interface eth0.100
+             no-preempt
+             peer-address 172.16.100.11
+             priority 50
+             virtual-address 172.16.100.1/24
+             vrid 100
+         }
+         group KNT-WAN {
+             authentication {
+                 password knt-wan.office1.kristianjones.dev
+                 type plaintext-password
+             }
+             interface eth0.115
+             no-preempt
+             virtual-address todo-secret/28
+             vrid 115
+         }
+     }
+ }
+ interfaces {
+     ethernet eth0 {
+         duplex full
+         hw-id 00:50:56:be:0c:d6
+         speed 10000
+         vif 100 {
+             address 172.16.100.12/24
+         }
+         vif 101 {
+             address 172.16.101.12/24
+         }
+         vif 110 {
+             address dhcp
+         }
+         vif 115 {
+             address dhcp
+             description "K-Net WAN"
+         }
+     }
+     ethernet eth1 {
+         address 172.21.1.2/30
+         hw-id e0:d5:5e:65:02:d9
+     }
+     loopback lo {
+     }
+ }
+ nat {
+     source {
+         rule 100 {
+             outbound-interface eth1
+             translation {
+                 address masquerade
+             }
+         }
+         rule 110 {
+             destination {
+                 address !todo-secret/27
+             }
+             outbound-interface eth0.115
+             translation {
+                 address todo-secret
+             }
+         }
+         rule 115 {
+             outbound-interface eth0.115
+             source {
+                 address !todo-secret
+             }
+             translation {
+                 address todo-secret
+             }
+         }
+         rule 120 {
+             outbound-interface eth0.110
+             translation {
+                 address masquerade
+             }
+         }
+     }
+ }
+ policy {
+     access-list 100 {
+         description "Inbound OSPF Routes from Peers"
+         rule 10 {
+             action deny
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.63.255
+                 network 172.16.0.0
+             }
+         }
+         rule 15 {
+             action deny
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.1.255
+                 network 172.17.4.0
+             }
+         }
+         rule 100 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 any
+             }
+         }
+     }
+     access-list 150 {
+         description "Outbound OSPF Redistribution"
+         rule 10 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.0.255
+                 network 172.16.100.0
+             }
+         }
+         rule 11 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.0.255
+                 network 172.16.21.0
+             }
+         }
+         rule 12 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.0.3
+                 network 172.21.1.0
+             }
+         }
+         rule 20 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.0.31
+                 network todo-secret
+             }
+         }
+         rule 100 {
+             action deny
+             destination {
+                 any
+             }
+             source {
+                 any
+             }
+         }
+     }
+     route-map PUBOSPF {
+         rule 100 {
+             action deny
+             match {
+                 ip {
+                     address {
+                         access-list 100
+                     }
+                 }
+             }
+         }
+         rule 500 {
+             action permit
+         }
+     }
+ }
+ protocols {
+     ospf {
+         access-list 150 {
+             export connected
+         }
+         area 0.0.0.0 {
+             authentication md5
+             network 172.16.100.0/24
+             network 172.16.101.0/24
+             network 172.16.9.0/24
+             network 172.21.1.0/30
+             shortcut enable
+         }
+         auto-cost {
+             reference-bandwidth 10000
+         }
+         default-information {
+             originate {
+                 always
+                 metric 1
+             }
+         }
+         interface eth0.100 {
+             authentication {
+                 md5 {
+                     key-id 1 {
+                         md5-key kjdev
+                     }
+                 }
+             }
+             dead-interval 5
+             hello-interval 1
+             priority 10
+             retransmit-interval 5
+             transmit-delay 1
+         }
+         interface eth0.115 {
+             bandwidth 40
+         }
+         interface eth1 {
+             cost 1
+             dead-interval 5
+             hello-interval 1
+             network point-to-point
+         }
+         log-adjacency-changes {
+         }
+         parameters {
+             abr-type shortcut
+             opaque-lsa
+             router-id 172.16.100.12
+         }
+         passive-interface eth0.110
+         passive-interface eth0.115
+         redistribute {
+             connected {
+             }
+         }
+         refresh {
+             timers 10
+         }
+     }
+     static {
+         route 0.0.0.0/0 {
+             dhcp-interface eth0.110
+             next-hop todo-secret {
+                 distance 2
+                 interface eth0.115
+             }
+         }
+         route 100.64.92.32/29 {
+             next-hop todo-secret {
+                 distance 1
+             }
+         }
+         route 172.16.9.0/24 {
+             next-hop 172.16.9.11 {
+             }
+         }
+         route 192.168.100.0/24 {
+             interface eth0.100 {
+             }
+         }
+     }
+ }
+ service {
+     dhcp-server {
+         listen-address 172.16.101.12
+         listen-address 172.16.100.12
+         shared-network-name 9FirstAve-SPINE {
+             subnet 172.16.100.0/24 {
+                 default-router 172.16.100.1
+                 dns-server 172.16.100.1
+                 failover {
+                     local-address 172.16.100.12
+                     name 9FirstAve-SPINE
+                     peer-address 172.16.100.11
+                     status primary
+                 }
+                 lease 300
+                 range 0 {
+                     start 172.16.100.200
+                     stop 172.16.100.250
+                 }
+             }
+         }
+         shared-network-name 9FirstAve-Services {
+             subnet 172.16.101.0/24 {
+                 default-router 172.16.101.1
+                 dns-server 1.1.1.1
+                 dns-server 1.0.0.1
+                 failover {
+                     local-address 172.16.101.12
+                     name 9FirstAve-Services
+                     peer-address 172.16.101.11
+                     status primary
+                 }
+                 lease 300
+                 range 0 {
+                     start 172.16.101.100
+                     stop 172.16.101.250
+                 }
+                 static-mapping hass2.office1.kristianjones.dev {
+                     ip-address 172.16.101.82
+                     mac-address 00:0c:29:29:5f:73
+                 }
+             }
+         }
+     }
+     dns {
+         forwarding {
+             allow-from 0.0.0.0/0
+             listen-address 172.16.100.1
+             listen-address 172.16.101.1
+             name-server 1.1.1.1
+             name-server 1.0.0.1
+         }
+     }
+     ssh {
+         listen-address 172.16.100.12
+     }
+     tftp-server {
+         allow-upload
+         directory /home/vyos/tftp
+         listen-address 172.16.100.1
+     }
+ }
+ system {
+     config-management {
+         commit-revisions 100
+     }
+     console {
+         device ttyS0 {
+             speed 115200
+         }
+     }
+     domain-name office1.kristianjones.dev
+     host-name rt2
+     ip {
+         multipath {
+             layer4-hashing
+         }
+     }
+     name-server 1.1.1.1
+     name-server 1.0.0.1
+     ntp {
+         server time.cloudflare.com {
+         }
+     }
+     static-host-mapping {
+         host-name unifi {
+             inet 172.16.21.52
+         }
+     }
+     syslog {
+         global {
+             facility all {
+                 level info
+             }
+             facility protocols {
+                 level debug
+             }
+         }
+     }
+ }
