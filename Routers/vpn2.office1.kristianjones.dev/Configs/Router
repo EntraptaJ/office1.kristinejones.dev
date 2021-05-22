@@ -1,0 +1,204 @@
+ interfaces {
+     ethernet eth0 {
+         address 172.16.100.32/24
+         hw-id 00:0c:29:d6:57:af
+     }
+     loopback lo {
+     }
+     wireguard wg01 {
+         address 172.30.0.6/30
+         description vpn1office1-vpn1site1.site-vpn.kristianjones.dev
+         peer site1-vpn1 {
+             address todo-secret
+             allowed-ips 0.0.0.0/0
+             persistent-keepalive 15
+             port 30002
+             pubkey kz4FNLwp2zLmo97aayE0ppUNeL7I/n5VNwAfQiEeCi0=
+         }
+         private-key site1-vpn1
+     }
+ }
+ policy {
+     access-list 100 {
+         description "Inbound OSPF Routes from Peers"
+         rule 10 {
+             action deny
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.31.255
+                 network 172.16.0.0
+             }
+         }
+         rule 100 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 any
+             }
+         }
+     }
+     access-list 150 {
+         description "Outbound OSPF Redistribution"
+         rule 10 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.0.255
+                 network 172.16.100.0
+             }
+         }
+         rule 11 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.0.255
+                 network 172.16.101.0
+             }
+         }
+         rule 31 {
+             action permit
+             destination {
+                 any
+             }
+             source {
+                 inverse-mask 0.0.0.255
+                 network 192.168.1.0
+             }
+         }
+         rule 100 {
+             action deny
+             destination {
+                 any
+             }
+             source {
+                 any
+             }
+         }
+     }
+     route-map CONNECTED {
+         rule 10 {
+             action permit
+             match {
+                 interface wg01
+             }
+         }
+     }
+     route-map PUBOSPF {
+         rule 100 {
+             action deny
+             match {
+                 ip {
+                     address {
+                         access-list 100
+                     }
+                 }
+             }
+         }
+         rule 500 {
+             action permit
+         }
+     }
+ }
+ protocols {
+     ospf {
+         access-list 150 {
+             export connected
+         }
+         area 0.0.0.0 {
+             authentication md5
+             network 172.16.100.0/24
+             network 172.30.0.4/30
+             shortcut enable
+         }
+         auto-cost {
+             reference-bandwidth 10000
+         }
+         interface eth0 {
+             authentication {
+                 md5 {
+                     key-id 1 {
+                         md5-key kjdev
+                     }
+                 }
+             }
+             bandwidth 1000
+             dead-interval 5
+             hello-interval 1
+             network broadcast
+             retransmit-interval 5
+             transmit-delay 1
+         }
+         interface wg01 {
+             bandwidth 50
+             dead-interval 15
+             hello-interval 1
+             network point-to-point
+         }
+         log-adjacency-changes {
+         }
+         parameters {
+             abr-type shortcut
+             opaque-lsa
+             router-id 172.16.100.32
+         }
+         redistribute {
+             connected {
+                 metric-type 2
+                 route-map CONNECTED
+             }
+         }
+         refresh {
+             timers 10
+         }
+     }
+     static {
+         route todo-secret/32 {
+             next-hop 172.16.100.1 {
+             }
+         }
+     }
+ }
+ service {
+     ssh {
+         listen-address 172.16.100.32
+     }
+ }
+ system {
+     config-management {
+         commit-revisions 100
+     }
+     console {
+         device ttyS0 {
+             speed 115200
+         }
+     }
+     domain-name office1.kristianjones.dev
+     host-name vpn2
+     ip {
+         multipath {
+             layer4-hashing
+         }
+     }
+     ntp {
+         server time.cloudflare.com {
+         }
+     }
+     syslog {
+         global {
+             facility all {
+                 level info
+             }
+             facility protocols {
+                 level debug
+             }
+         }
+     }
+ }
